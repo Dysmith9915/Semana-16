@@ -1,0 +1,190 @@
+#Importamos las librerias que vamos usar
+import tkinter as tk
+from tkinter import simpledialog, messagebox
+import json #utilicé json para guarde los datos
+import os
+
+# Clases
+class Mascota:
+    def __init__(self, nombre, especie, edad):
+        self.nombre = nombre
+        self.especie = especie
+        self.edad = edad
+        self.historial = []
+
+    def agregar_evento(self, evento):
+        self.historial.append(evento)
+
+    def to_dict(self):
+        return {
+            "nombre": self.nombre,
+            "especie": self.especie,
+            "edad": self.edad,
+            "historial": self.historial
+        }
+
+    @staticmethod
+    def from_dict(data):
+        m = Mascota(data["nombre"], data["especie"], data["edad"])
+        m.historial = data["historial"]
+        return m
+
+
+class Dueno:
+    def __init__(self, nombre, telefono):
+        self.nombre = nombre
+        self.telefono = telefono
+        self.mascotas = []
+
+    def agregar_mascota(self, mascota):
+        self.mascotas.append(mascota)
+
+    def to_dict(self):
+        return {
+            "nombre": self.nombre,
+            "telefono": self.telefono,
+            "mascotas": [m.to_dict() for m in self.mascotas]
+        }
+
+    @staticmethod
+    def from_dict(data):
+        d = Dueno(data["nombre"], data["telefono"])
+        d.mascotas = [Mascota.from_dict(m) for m in data["mascotas"]]
+        return d
+
+
+class Cita:
+    def __init__(self, mascota, fecha, motivo):
+        self.mascota = mascota
+        self.fecha = fecha
+        self.motivo = motivo
+
+    def to_dict(self):
+        return {
+            "mascota": self.mascota,
+            "fecha": self.fecha,
+            "motivo": self.motivo
+        }
+
+    @staticmethod
+    def from_dict(data):
+        return Cita(data["mascota"], data["fecha"], data["motivo"])
+
+
+class Veterinaria:
+    def __init__(self):
+        self.duenos = []
+        self.citas = []
+        self.cargar_datos()
+
+    def agregar_dueno(self, dueno):
+        self.duenos.append(dueno)
+
+    def buscar_dueno(self, nombre):
+        for d in self.duenos:
+            if d.nombre.lower() == nombre.lower():
+                return d
+        return None
+
+    def agendar_cita(self, cita):
+        self.citas.append(cita)
+
+    def guardar_datos(self):
+        datos = {
+            "duenos": [d.to_dict() for d in self.duenos],
+            "citas": [c.to_dict() for c in self.citas]
+        }
+        with open("datos.json", "w") as f:
+            json.dump(datos, f, indent=4)
+
+    def cargar_datos(self):
+        if os.path.exists("datos.json"):
+            with open("datos.json", "r") as f:
+                datos = json.load(f)
+                self.duenos = [Dueno.from_dict(d) for d in datos.get("duenos", [])]
+                self.citas = [Cita.from_dict(c) for c in datos.get("citas", [])]
+
+
+# Inrerfaces
+veterinaria = Veterinaria()
+
+ventana = tk.Tk()
+ventana.title("Gestor de Mascotas - Veterinaria")
+ventana.geometry("400x400")
+
+def registrar_dueno():
+    nombre = simpledialog.askstring("Dueño", "Nombre del dueño:")
+    telefono = simpledialog.askstring("Dueño", "Teléfono del dueño:")
+    if nombre and telefono:
+        if veterinaria.buscar_dueno(nombre):
+            messagebox.showinfo("Info", "El dueño ya existe.")
+            return
+        dueno = Dueno(nombre, telefono)
+        veterinaria.agregar_dueno(dueno)
+        veterinaria.guardar_datos()
+        messagebox.showinfo("Éxito", "Dueño registrado.")
+
+def agregar_mascota():
+    nombre_dueno = simpledialog.askstring("Buscar Dueño", "Nombre del dueño:")
+    dueno = veterinaria.buscar_dueno(nombre_dueno)
+    if dueno:
+        nombre = simpledialog.askstring("Mascota", "Nombre de la mascota:")
+        especie = simpledialog.askstring("Mascota", "Especie:")
+        edad = simpledialog.askstring("Mascota", "Edad:")
+        m = Mascota(nombre, especie, edad)
+        dueno.agregar_mascota(m)
+        veterinaria.guardar_datos()
+        messagebox.showinfo("Éxito", "Mascota agregada.")
+    else:
+        messagebox.showerror("Error", "Dueño no encontrado.")
+
+def agendar_cita():
+    nombre_mascota = simpledialog.askstring("Cita", "Nombre de la mascota:")
+    mascota_encontrada = None
+    for dueno in veterinaria.duenos:
+        for mascota in dueno.mascotas:
+            if mascota.nombre.lower() == nombre_mascota.lower():
+                mascota_encontrada = mascota
+                break
+
+    if mascota_encontrada:
+        fecha = simpledialog.askstring("Cita", "Fecha de la cita (DD/MM/AAAA):")
+        motivo = simpledialog.askstring("Cita", "Motivo:")
+        cita = Cita(mascota_encontrada.nombre, fecha, motivo)
+        veterinaria.agendar_cita(cita)
+        mascota_encontrada.agregar_evento(f"Cita: {fecha} - {motivo}")
+        veterinaria.guardar_datos()
+        messagebox.showinfo("Éxito", "Cita agendada.")
+    else:
+        messagebox.showerror("Error", "Mascota no encontrada.")
+
+def ver_historial():
+    nombre_mascota = simpledialog.askstring("Historial", "Nombre de la mascota:")
+    for dueno in veterinaria.duenos:
+        for mascota in dueno.mascotas:
+            if mascota.nombre.lower() == nombre_mascota.lower():
+                historial = "\n".join(mascota.historial) or "Sin historial aún."
+                messagebox.showinfo(f"Historial de {mascota.nombre}", historial)
+                return
+    messagebox.showerror("Error", "Mascota no encontrada.")
+
+def ver_citas():
+    if not veterinaria.citas:
+        messagebox.showinfo("Citas", "No hay citas agendadas.")
+        return
+    texto = ""
+    for c in veterinaria.citas:
+        texto += f"{c.fecha} - {c.mascota}: {c.motivo}\n"
+    messagebox.showinfo("Citas agendadas", texto)
+
+# Mando o botones
+tk.Button(ventana, text="Registrar Dueño", command=registrar_dueno, width=30).pack(pady=5)
+tk.Button(ventana, text="Agregar Mascota", command=agregar_mascota, width=30).pack(pady=5)
+tk.Button(ventana, text="Agendar Cita", command=agendar_cita, width=30).pack(pady=5)
+tk.Button(ventana, text="Ver Historial Médico", command=ver_historial, width=30).pack(pady=5)
+tk.Button(ventana, text="Ver Citas", command=ver_citas, width=30).pack(pady=5)
+tk.Button(ventana, text="Salir y Guardar", command=lambda: (veterinaria.guardar_datos(), ventana.destroy()), width=30).pack(pady=20)
+
+ventana.mainloop()
+
+
